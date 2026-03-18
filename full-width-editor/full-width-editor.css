@@ -1,0 +1,22 @@
+/* Full Width Editor
+ * Removes Obsidian's default line width constraint so the editor
+ * expands to fill all available horizontal space.
+ *
+ * --file-line-width must be set on body so it cascades into the elements
+ * that Obsidian uses to apply max-width (.cm-sizer, .markdown-preview-sizer).
+ * The direct overrides below act as a fallback.
+ */
+
+body {
+  --file-line-width: 100%;
+}
+
+/* Live editor (CodeMirror 6) */
+.markdown-source-view.mod-cm6 .cm-sizer {
+  max-width: 100%;
+}
+
+/* Reading view */
+.markdown-preview-sizer {
+  max-width: 100%;
+}
