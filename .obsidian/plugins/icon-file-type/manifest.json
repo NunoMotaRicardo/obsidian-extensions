@@ -1,9 +1,0 @@
-{
-  "id": "icon-file-type",
-  "name": "Icon File Type",
-  "version": "1.0.0",
-  "minAppVersion": "1.0.0",
-  "description": "Shows file-type icons in the explorer sidebar for Office documents, PDFs, images, audio, video, archives, and code files.",
-  "author": "nunor",
-  "isDesktopOnly": false
-}

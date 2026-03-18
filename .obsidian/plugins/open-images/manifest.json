@@ -1,9 +1,0 @@
-{
-  "id": "open-images",
-  "name": "Open Images",
-  "version": "1.0.0",
-  "minAppVersion": "1.0.0",
-  "description": "Ctrl+click an embedded image to open it in a new tab.",
-  "author": "nmr",
-  "isDesktopOnly": false
-}
