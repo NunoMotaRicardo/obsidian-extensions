@@ -1,0 +1,57 @@
+/* Optimal Theme
+ * ============================================================
+ * A theme focused on a distraction-free, full-width editing
+ * and reading experience.
+ * ============================================================
+ */
+
+/* ── Full Width Editor ──────────────────────────────────────
+ * Removes Obsidian's default line-width constraint so the
+ * editor and reading view expand to fill all available space.
+ *
+ * --file-line-width expects a pixel value (default 700px).
+ * Setting it to a very large value effectively disables the
+ * constraint. Direct max-width/width overrides with !important
+ * beat Obsidian's internal specificity and the "Readable line
+ * length" setting.
+ */
+
+body {
+  --file-line-width: 99999px !important;
+}
+
+/* Editing view (Source mode & Live Preview — CodeMirror 6) */
+.markdown-source-view.mod-cm6 .cm-sizer {
+  max-width: 100% !important;
+  width: 100% !important;
+}
+
+.markdown-source-view.mod-cm6 .cm-contentContainer {
+  max-width: 100% !important;
+}
+
+/* Reading view */
+.markdown-preview-view .markdown-preview-sizer {
+  max-width: 100% !important;
+  width: 100% !important;
+}
+
+/* Override when "Readable line length" is enabled in Settings */
+.is-readable-line-width .cm-sizer {
+  max-width: 100% !important;
+  width: 100% !important;
+}
+
+.is-readable-line-width .markdown-preview-sizer {
+  max-width: 100% !important;
+  width: 100% !important;
+}
+
+/* Inline title & metadata (Properties) */
+.inline-title {
+  max-width: 100% !important;
+}
+
+.metadata-container {
+  max-width: 100% !important;
+}

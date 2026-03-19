@@ -10,7 +10,13 @@ A CSS snippet for [Obsidian](https://obsidian.md) that removes the default line-
 
 ## What it does
 
-Overrides `--file-line-width` to `100%` on both the live-editor and reading views, so notes use the full width of the window instead of the narrow centered column.
+Forces notes to use the full available width in both editing (Source / Live Preview) and Reading view, overriding Obsidian's "Readable line length" setting. It works by:
+
+- Setting `--file-line-width` to a very large pixel value (Obsidian expects pixels, not percentages)
+- Overriding `max-width` and `width` on `.cm-sizer`, `.cm-contentContainer`, `.markdown-preview-sizer`, and other key containers with `!important` to beat Obsidian's internal specificity
+- Also expanding the inline title and Properties (metadata) section to full width
+
+> **Note:** You do *not* need to disable "Readable line length" in Settings → Editor — this snippet overrides it automatically.
 
 ## Uninstall
 

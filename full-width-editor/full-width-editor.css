@@ -1,22 +1,49 @@
 /* Full Width Editor
  * Removes Obsidian's default line width constraint so the editor
- * expands to fill all available horizontal space.
+ * and reading view expand to fill all available horizontal space.
  *
- * --file-line-width must be set on body so it cascades into the elements
- * that Obsidian uses to apply max-width (.cm-sizer, .markdown-preview-sizer).
- * The direct overrides below act as a fallback.
+ * Obsidian's --file-line-width expects a pixel value (default 700px).
+ * Setting it to a very large value effectively disables the constraint.
+ * Direct max-width/width overrides with !important are needed to beat
+ * Obsidian's internal specificity and the "Readable line length" setting.
  */
 
 body {
-  --file-line-width: 100%;
+  --file-line-width: 99999px !important;
 }
 
-/* Live editor (CodeMirror 6) */
+/* ── Editing view (Source mode & Live Preview — CodeMirror 6) ── */
 .markdown-source-view.mod-cm6 .cm-sizer {
-  max-width: 100%;
+  max-width: 100% !important;
+  width: 100% !important;
 }
 
-/* Reading view */
-.markdown-preview-sizer {
-  max-width: 100%;
+.markdown-source-view.mod-cm6 .cm-contentContainer {
+  max-width: 100% !important;
+}
+
+/* ── Reading view ── */
+.markdown-preview-view .markdown-preview-sizer {
+  max-width: 100% !important;
+  width: 100% !important;
+}
+
+/* ── Override when "Readable line length" is enabled in Settings ── */
+.is-readable-line-width .cm-sizer {
+  max-width: 100% !important;
+  width: 100% !important;
+}
+
+.is-readable-line-width .markdown-preview-sizer {
+  max-width: 100% !important;
+  width: 100% !important;
+}
+
+/* ── Inline title & metadata (Properties) ── */
+.inline-title {
+  max-width: 100% !important;
+}
+
+.metadata-container {
+  max-width: 100% !important;
 }
