@@ -6,8 +6,15 @@ A collection of [Obsidian](https://obsidian.md/) plugins developed and maintaine
 
 | Plugin | Description |
 | ------ | ----------- |
-| [Icon File Type](./icon-file-type/) | Shows file-type icons in the explorer sidebar for Office documents, PDFs, images, audio, video, archives, and code files |
-| [Open Images](./open-images/) | `Ctrl+click` an embedded image to open it in a new tab |
+| [Icon File Type](./icon-file-type/README.md) | Shows file-type icons in the explorer sidebar for Office documents, PDFs, images, audio, video, archives, and code files |
+| [Open Images](./open-images/README.md) | `Ctrl+click` an embedded image to open it in a new tab |
+| [Note Export](./note-export/README.md) | Export notes to PDF or Word (.docx) with full Mermaid diagram support |
+
+## Appearance
+
+| Extension | Type | Description |
+| --------- | ---- | ----------- |
+| [Optimal](./optimal/) | Theme | Minimal Obsidian theme |
 
 ## Installation
 
