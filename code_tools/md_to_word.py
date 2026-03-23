@@ -403,29 +403,31 @@ def markdown_to_word(md_file_path, output_path):
                 continue
         
         # Handle headers
+        # Map Markdown heading levels to Word styles:
+        # H1 -> Title (level=0), H2 -> Heading 1 (level=1), H3 -> Heading 2 (level=2), etc.
         if line.startswith('# '):
-            heading = doc.add_heading(line[2:], level=1)
+            heading = doc.add_heading(line[2:], level=0)
             # Reset numbering when encountering headers
             numbered_list_counter = {}
             last_was_numbered_list = False
         elif line.startswith('## '):
-            heading = doc.add_heading(line[3:], level=2)
+            heading = doc.add_heading(line[3:], level=1)
             numbered_list_counter = {}
             last_was_numbered_list = False
         elif line.startswith('### '):
-            heading = doc.add_heading(line[4:], level=3)
+            heading = doc.add_heading(line[4:], level=2)
             numbered_list_counter = {}
             last_was_numbered_list = False
         elif line.startswith('#### '):
-            heading = doc.add_heading(line[5:], level=4)
+            heading = doc.add_heading(line[5:], level=3)
             numbered_list_counter = {}
             last_was_numbered_list = False
         elif line.startswith('##### '):
-            heading = doc.add_heading(line[6:], level=5)
+            heading = doc.add_heading(line[6:], level=4)
             numbered_list_counter = {}
             last_was_numbered_list = False
         elif line.startswith('###### '):
-            heading = doc.add_heading(line[7:], level=6)
+            heading = doc.add_heading(line[7:], level=5)
             numbered_list_counter = {}
             last_was_numbered_list = False
         # Handle lists with multiple levels
