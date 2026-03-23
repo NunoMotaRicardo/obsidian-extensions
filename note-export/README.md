@@ -24,18 +24,23 @@ An [Obsidian](https://obsidian.md/) plugin that exports notes to **PDF** or **Wo
 ## Usage
 
 ### Via ribbon icon
+
 Click the **download** icon in the left sidebar. A modal appears asking you to choose:
+
 - **PDF** — generates a PDF using Electron's `printToPDF`
 - **Word (.docx)** — generates a `.docx` file using the `docx` library
 
-A save dialog opens after processing, letting you choose where to save the file.
+A save dialog opens first, then the export runs and writes the chosen file.
 
 ### Via command palette
+
 Open the command palette (`Ctrl/Cmd+P`) and search for:
+
 - **Note Export: Export to PDF**
 - **Note Export: Export to Word (.docx)**
 
 ### Via file right-click menu
+
 Right-click any `.md` file in the file explorer (or use the editor's more-options menu). Both export options appear at the bottom of the context menu.
 
 ## Settings
@@ -43,7 +48,7 @@ Right-click any `.md` file in the file explorer (or use the editor's more-option
 Open **Settings → Note Export** to configure:
 
 | Setting | Description |
-|---------|-------------|
+| ------- | ----------- |
 | Show ribbon icon | Toggle the sidebar export button on/off |
 | **PDF — Page size** | A4 (default), A3, Letter, Legal, Tabloid |
 | **PDF — Orientation** | Portrait / Landscape |

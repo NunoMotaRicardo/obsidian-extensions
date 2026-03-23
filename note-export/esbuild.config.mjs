@@ -8,7 +8,7 @@ const outDir = '.';
 const ctx = await esbuild.context({
   entryPoints: ['main.ts'],
   bundle: true,
-  external: ['obsidian', 'electron', '@codemirror/*', '@lezer/*', 'fs', 'path', 'os'],
+  external: ['obsidian', 'electron', '@codemirror/*', '@lezer/*', 'fs', 'path', 'os', 'url'],
   format: 'cjs',
   target: 'es2018',
   logLevel: 'info',

@@ -1,118 +1,210 @@
+import * as fs   from 'fs';
+import * as os   from 'os';
+import * as path from 'path';
+import { pathToFileURL } from 'url';
+
 import { App, Notice, TFile } from 'obsidian';
+
 import { NoteExportSettings, PAGE_SIZES } from './settings';
-import { renderNoteToHTML, collectObsidianCSS, buildFullHTML } from './renderer';
+import { renderNote }           from './renderer';
 import { replaceMermaidBlocks } from './mermaid-exporter';
 
-// Electron APIs available in Obsidian's desktop environment
-const { remote } = require('electron');
-const { BrowserWindow, dialog } = remote;
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
+// mm → inches for Electron printToPDF margins
+const MM_TO_IN = 1 / 25.4;
 
-/** Map our page size names to Electron's expected format */
-function getElectronPageSize(settings: NoteExportSettings): { width: number; height: number } | string {
-	const knownSizes: Record<string, string> = {
-		A4: 'A4',
-		A3: 'A3',
-		Letter: 'Letter',
-		Legal: 'Legal',
-		Tabloid: 'Tabloid',
-	};
+function sleep(ms: number): Promise<void> {
+return new Promise(resolve => setTimeout(resolve, ms));
+}
 
-	const electronName = knownSizes[settings.pdfPageSize];
-	if (electronName) return electronName as any;
+function normalizeTemplate(template: string): string | undefined {
+const trimmed = template.trim();
+return trimmed ? trimmed : undefined;
+}
 
-	// Fallback to dimensions in microns
-	const page = PAGE_SIZES[settings.pdfPageSize] ?? PAGE_SIZES.A4;
-	return {
-		width: page.width * 1000, // mm to microns
-		height: page.height * 1000,
-	};
+function buildHtmlPage(bodyHtml: string, styles: string, settings: NoteExportSettings): string {
+const sizeKey     = settings.pdfPageSize;
+const orientation = settings.pdfOrientation;
+const page        = PAGE_SIZES[sizeKey] ?? PAGE_SIZES['A4'];
+const pageW       = orientation === 'landscape' ? page.height : page.width;
+const pageH       = orientation === 'landscape' ? page.width  : page.height;
+
+// @page sets the paper size and margins within the HTML/CSS
+const pageRuleWidthMM  = orientation === 'landscape' ? page.height : page.width;
+const pageRuleHeightMM = orientation === 'landscape' ? page.width  : page.height;
+
+return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<style>
+@page {
+  size: ${pageRuleWidthMM}mm ${pageRuleHeightMM}mm;
+  margin: ${settings.pdfMarginTop}mm ${settings.pdfMarginRight}mm ${settings.pdfMarginBottom}mm ${settings.pdfMarginLeft}mm;
+}
+html, body {
+  margin: 0; padding: 0;
+  background: #ffffff;
+  color: #000000;
+  font-family: sans-serif;
+}
+body { padding: ${settings.pdfMarginTop}mm ${settings.pdfMarginRight}mm ${settings.pdfMarginBottom}mm ${settings.pdfMarginLeft}mm; box-sizing: border-box; }
+/* Mermaid images: centred, no overflow */
+img.note-export-mermaid-img { display:block; margin:0 auto; max-width:100%; }
+img { max-width:100%; }
+pre, code { white-space: pre-wrap; word-break: break-all; }
+${styles}
+</style>
+</head>
+<body>
+${bodyHtml}
+</body>
+</html>`;
 }
 
 export async function exportToPdf(
-	app: App,
-	file: TFile,
-	settings: NoteExportSettings
+app: App,
+file: TFile,
+settings: NoteExportSettings,
 ): Promise<void> {
-	const notice = new Notice('Exporting to PDF…', 0);
+// ── 1. Ask where to save ──────────────────────────────────────────────────
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { remote } = require('electron') as any;
+const defaultPath = path.join(
+os.homedir(),
+file.basename + '.pdf',
+);
 
-	try {
-		// 1. Render note to HTML
-		const container = await renderNoteToHTML(app, file);
+const { filePath, canceled } = await remote.dialog.showSaveDialog({
+defaultPath,
+filters: [{ name: 'PDF', extensions: ['pdf'] }],
+});
 
-		// 2. Replace Mermaid SVGs with fitted PNGs
-		await replaceMermaidBlocks(container, settings, 'pdf');
+if (canceled || !filePath) return;
 
-		// 3. Collect Obsidian CSS and build full HTML document
-		const css = collectObsidianCSS();
-		const html = buildFullHTML(container, css);
+// ── 2. Render note with Obsidian's pipeline ───────────────────────────────
+const notice = new Notice('⏳ Rendering note…', 0);
 
-		// 4. Write HTML to a temp file (data URLs can hit length limits)
-		const tmpDir = os.tmpdir();
-		const tmpFile = path.join(tmpDir, `note-export-${Date.now()}.html`);
-		fs.writeFileSync(tmpFile, html, 'utf-8');
+let container: HTMLElement;
+let styles: string;
+try {
+({ container, styles } = await renderNote(app, file));
+} catch (err) {
+notice.hide();
+new Notice(`❌ Render failed: ${err instanceof Error ? err.message : String(err)}`, 0);
+console.error('[note-export] renderNote failed:', err);
+throw err;
+}
 
-		// 5. Create hidden BrowserWindow and load the HTML
-		const win = new BrowserWindow({
-			show: false,
-			width: 800,
-			height: 600,
-			webPreferences: {
-				offscreen: true,
-			},
-		});
+// ── 3. Convert Mermaid SVGs to PNG images ─────────────────────────────────
+try {
+await replaceMermaidBlocks(container, settings, 'pdf');
+} catch (err) {
+console.error('[note-export] replaceMermaidBlocks error:', err);
+// Continue even if some diagrams fail — they keep their original SVG fallback
+}
 
-		await win.loadFile(tmpFile);
+// ── 4. Build self-contained HTML string ───────────────────────────────────
+const html = buildHtmlPage(container.innerHTML, styles, settings);
 
-		// Wait a bit for any images to load
-		await new Promise(resolve => setTimeout(resolve, 500));
+// ── 5. Write temp HTML file ───────────────────────────────────────────────
+const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'note-export-'));
+const tmpFile = path.join(tempDir, `${file.basename}__note_export__.html`);
+try {
+fs.writeFileSync(tmpFile, html, 'utf-8');
+} catch (err) {
+notice.hide();
+new Notice(`❌ Could not write temp file: ${err instanceof Error ? err.message : String(err)}`, 0);
+console.error('[note-export] writeFileSync (tmp) failed:', err);
+throw err;
+}
 
-		// 6. Generate PDF
-		const landscape = settings.pdfOrientation === 'landscape';
-		const pdfBuffer = await win.webContents.printToPDF({
-			landscape,
-			marginsType: 0, // custom margins
-			pageSize: getElectronPageSize(settings),
-			printBackground: settings.pdfPrintBackground,
-			margins: {
-				top: settings.pdfMarginTop / 25.4,       // mm to inches
-				bottom: settings.pdfMarginBottom / 25.4,
-				left: settings.pdfMarginLeft / 25.4,
-				right: settings.pdfMarginRight / 25.4,
-			},
-			headerTemplate: settings.pdfHeaderTemplate || undefined,
-			footerTemplate: settings.pdfFooterTemplate || undefined,
-			displayHeaderFooter: !!(settings.pdfHeaderTemplate || settings.pdfFooterTemplate),
-		});
+// ── 6. Print to PDF via a hidden BrowserWindow ────────────────────────────
+notice.hide();
+const printNotice = new Notice('🖨️ Printing to PDF…', 0);
 
-		win.destroy();
+try {
+await new Promise<void>((resolve, reject) => {
+const BrowserWindow = remote.BrowserWindow;
+const win = new BrowserWindow({
+show: false,
+webPreferences: {
+javascript: false, // no JS needed — content is static HTML
+nodeIntegration: false,
+contextIsolation: true,
+},
+});
 
-		// Clean up temp file
-		try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
+const fileUrl = pathToFileURL(tmpFile).toString();
+console.log('[note-export] Loading temp HTML:', fileUrl);
 
-		// 7. Show save dialog
-		const defaultName = file.basename + '.pdf';
-		const result = await dialog.showSaveDialog({
-			title: 'Export to PDF',
-			defaultPath: defaultName,
-			filters: [{ name: 'PDF', extensions: ['pdf'] }],
-		});
+const hangTimeout = setTimeout(() => {
+win.destroy();
+reject(new Error('Timed out waiting for page to load. The note may be too large for PDF export.'));
+}, 15_000);
 
-		if (result.canceled || !result.filePath) {
-			notice.hide();
-			return;
-		}
+win.webContents.once('did-finish-load', async () => {
+clearTimeout(hangTimeout);
+try {
+// Give fonts/layout a moment to settle.
+await sleep(500);
 
-		// 8. Write PDF
-		fs.writeFileSync(result.filePath, pdfBuffer);
+const sizeKey     = settings.pdfPageSize;
+const orientation = settings.pdfOrientation;
+const page        = PAGE_SIZES[sizeKey] ?? PAGE_SIZES['A4'];
+const pageW       = orientation === 'landscape' ? page.height : page.width;
+const pageH       = orientation === 'landscape' ? page.width  : page.height;
 
-		notice.hide();
-		new Notice(`Exported to ${path.basename(result.filePath)}`);
-	} catch (e) {
-		notice.hide();
-		console.error('Note Export: PDF export failed', e);
-		new Notice(`PDF export failed: ${(e as Error).message}`);
-	}
+console.log('[note-export] Calling printToPDF, page:', sizeKey, orientation, pageW, 'x', pageH, 'mm');
+const headerTemplate = normalizeTemplate(settings.pdfHeaderTemplate);
+const footerTemplate = normalizeTemplate(settings.pdfFooterTemplate);
+const pdfBuffer = await win.webContents.printToPDF({
+printBackground: settings.pdfPrintBackground,
+landscape:       orientation === 'landscape',
+pageSize:        { width: Math.round(pageW * 1000), height: Math.round(pageH * 1000) }, // microns
+margins: {
+marginType: 'custom',
+top:    settings.pdfMarginTop    * MM_TO_IN,
+bottom: settings.pdfMarginBottom * MM_TO_IN,
+left:   settings.pdfMarginLeft   * MM_TO_IN,
+right:  settings.pdfMarginRight  * MM_TO_IN,
+},
+displayHeaderFooter: Boolean(headerTemplate || footerTemplate),
+headerTemplate,
+footerTemplate,
+});
+
+console.log('[note-export] printToPDF done, bytes:', pdfBuffer.length);
+fs.writeFileSync(filePath, pdfBuffer);
+win.destroy();
+resolve();
+} catch (e) {
+win.destroy();
+reject(e);
+}
+});
+
+win.webContents.once('did-fail-load', (_ev: unknown, code: number, desc: string) => {
+clearTimeout(hangTimeout);
+win.destroy();
+reject(new Error(`Page failed to load [${code}]: ${desc}`));
+});
+
+win.loadURL(fileUrl).catch((error: unknown) => {
+clearTimeout(hangTimeout);
+win.destroy();
+reject(error instanceof Error ? error : new Error(String(error)));
+});
+});
+
+new Notice(`✅ PDF saved: ${path.basename(filePath)}`);
+} catch (err) {
+new Notice(`❌ PDF export failed: ${err instanceof Error ? err.message : String(err)}`, 0);
+console.error('[note-export] PDF export failed:', err);
+throw err;
+} finally {
+printNotice.hide();
+try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
+try { fs.rmdirSync(tempDir); } catch { /* ignore */ }
+}
 }

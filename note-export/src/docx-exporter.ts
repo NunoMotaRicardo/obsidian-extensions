@@ -20,13 +20,8 @@ import {
 	PageOrientation,
 } from 'docx';
 import { NoteExportSettings, PAGE_SIZES } from './settings';
-import { renderNoteToHTML } from './renderer';
-import { replaceMermaidBlocks, MermaidImage } from './mermaid-exporter';
-
-const { remote } = require('electron');
-const { dialog } = remote;
-const fs = require('fs');
-const path = require('path');
+import { renderNote } from './renderer';
+import { replaceMermaidBlocks } from './mermaid-exporter';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -77,17 +72,49 @@ export async function exportToDocx(
 	file: TFile,
 	settings: NoteExportSettings
 ): Promise<void> {
-	const notice = new Notice('Exporting to Word…', 0);
+	// Resolve electron/node modules inside the function so a module-load
+	// failure doesn't silently break the entire plugin.
+	let dialog: any, fs: any, path: any, os: any;
+	try {
+		const { remote } = require('electron') as any;
+		dialog = remote.dialog;
+		fs     = require('fs');
+		path   = require('path');
+		os     = require('os');
+	} catch (e) {
+		new Notice('Word export failed: could not load Electron/Node modules. ' + (e as Error).message, 0);
+		console.error('[note-export] module init failed:', e);
+		return;
+	}
+
+	const defaultName = path.join(os.homedir(), file.basename + '.docx');
+	const result = await dialog.showSaveDialog({
+		title: 'Export to Word',
+		defaultPath: defaultName,
+		filters: [{ name: 'Word Document', extensions: ['docx'] }],
+	});
+
+	if (result.canceled || !result.filePath) {
+		return;
+	}
+
+	const notice = new Notice('⏳ Exporting to Word…', 0);
 
 	try {
 		// 1. Render note to HTML
-		const container = await renderNoteToHTML(app, file);
+		console.log('[note-export] DOCX: renderNote start');
+		const { container } = await renderNote(app, file);
+		console.log('[note-export] DOCX: renderNote done');
 
-		// 2. Replace Mermaid diagrams with PNGs
-		const mermaidImages = await replaceMermaidBlocks(container, settings, 'docx');
+		// 2. Replace Mermaid diagrams with PNGs (modifies container in-place)
+		console.log('[note-export] DOCX: replaceMermaidBlocks start');
+		await replaceMermaidBlocks(container, settings, 'docx');
+		console.log('[note-export] DOCX: replaceMermaidBlocks done');
 
 		// 3. Walk the DOM and build docx elements
-		const children = walkChildren(container, settings, mermaidImages, 0);
+		console.log('[note-export] DOCX: walkChildren start');
+		const children = walkChildren(container, settings, 0);
+		console.log('[note-export] DOCX: walkChildren done, elements:', children.length);
 
 		// 4. Build document
 		const pageKey = settings.docxPageSize;
@@ -137,28 +164,17 @@ export async function exportToDocx(
 		});
 
 		// 5. Pack to buffer
+		console.log('[note-export] DOCX: Packer.toBuffer start');
 		const buffer = await Packer.toBuffer(doc);
-
-		// 6. Save dialog
-		const defaultName = file.basename + '.docx';
-		const result = await dialog.showSaveDialog({
-			title: 'Export to Word',
-			defaultPath: defaultName,
-			filters: [{ name: 'Word Document', extensions: ['docx'] }],
-		});
-
-		if (result.canceled || !result.filePath) {
-			notice.hide();
-			return;
-		}
+		console.log('[note-export] DOCX: Packer.toBuffer done, bytes:', buffer.byteLength);
 
 		fs.writeFileSync(result.filePath, buffer);
 		notice.hide();
-		new Notice(`Exported to ${path.basename(result.filePath)}`);
+		new Notice(`✅ Exported to ${path.basename(result.filePath)}`);
 	} catch (e) {
 		notice.hide();
-		console.error('Note Export: DOCX export failed', e);
-		new Notice(`Word export failed: ${(e as Error).message}`);
+		console.error('[note-export] DOCX export failed:', e);
+		new Notice(`❌ Word export failed: ${(e as Error).message ?? String(e)}`, 0);
 	}
 }
 
@@ -169,7 +185,6 @@ type DocxChild = Paragraph | Table;
 function walkChildren(
 	parent: HTMLElement | Node,
 	settings: NoteExportSettings,
-	mermaidImages: MermaidImage[],
 	listLevel: number
 ): DocxChild[] {
 	const results: DocxChild[] = [];
@@ -211,23 +226,23 @@ function walkChildren(
 				break;
 
 			case 'p':
-				results.push(makeParagraph(el, settings, mermaidImages));
+				results.push(makeParagraph(el, settings));
 				break;
 
 			case 'ul':
-				results.push(...makeList(el, settings, mermaidImages, 'bullets', listLevel));
+				results.push(...makeList(el, settings, 'bullets', listLevel));
 				break;
 
 			case 'ol':
-				results.push(...makeList(el, settings, mermaidImages, 'numbered', listLevel));
+				results.push(...makeList(el, settings, 'numbered', listLevel));
 				break;
 
 			case 'table':
-				results.push(makeTable(el, settings, mermaidImages));
+				results.push(makeTable(el, settings));
 				break;
 
 			case 'blockquote':
-				results.push(...makeBlockquote(el, settings, mermaidImages));
+				results.push(...makeBlockquote(el, settings));
 				break;
 
 			case 'pre':
@@ -239,19 +254,18 @@ function walkChildren(
 				break;
 
 			case 'img': {
-				const imgPara = makeImageParagraph(el as HTMLImageElement, settings, mermaidImages);
+				const imgPara = makeImageParagraph(el as HTMLImageElement, settings);
 				if (imgPara) results.push(imgPara);
 				break;
 			}
 
 			case 'div':
-			case 'section':
-			case 'article':
-			case 'main':
-			case 'span':
+				case 'section':
+				case 'article':
+				case 'main':
+				case 'span':
 				// Container elements — recurse into children
-				results.push(...walkChildren(el, settings, mermaidImages, listLevel));
-				break;
+				results.push(...walkChildren(el, settings, listLevel));
 
 			case 'br':
 				// Skip standalone <br> at block level
@@ -260,7 +274,7 @@ function walkChildren(
 			default:
 				// For unknown elements, try to recurse
 				if (el.children.length > 0) {
-					results.push(...walkChildren(el, settings, mermaidImages, listLevel));
+					results.push(...walkChildren(el, settings, listLevel));
 				} else if (el.textContent?.trim()) {
 					results.push(new Paragraph({ children: [new TextRun(el.textContent)] }));
 				}
@@ -273,7 +287,7 @@ function walkChildren(
 
 // ─── Element builders ────────────────────────────────────────────────────────
 
-function makeHeading(el: HTMLElement, level: typeof HeadingLevel[keyof typeof HeadingLevel], settings: NoteExportSettings): Paragraph {
+function makeHeading(el: HTMLElement, level: (typeof HeadingLevel)[keyof typeof HeadingLevel], settings: NoteExportSettings): Paragraph {
 	const runs = extractInlineRuns(el, {});
 	return new Paragraph({
 		heading: level,
@@ -281,18 +295,18 @@ function makeHeading(el: HTMLElement, level: typeof HeadingLevel[keyof typeof He
 	});
 }
 
-function makeParagraph(el: HTMLElement, settings: NoteExportSettings, mermaidImages: MermaidImage[]): Paragraph {
+function makeParagraph(el: HTMLElement, settings: NoteExportSettings): Paragraph {
 	// Check if this paragraph contains only a Mermaid image
 	const mermaidImg = el.querySelector<HTMLImageElement>('img.note-export-mermaid-img');
 	if (mermaidImg) {
-		const imgPara = makeImageParagraph(mermaidImg, settings, mermaidImages);
+		const imgPara = makeImageParagraph(mermaidImg, settings);
 		if (imgPara) return imgPara;
 	}
 
 	// Check for regular images
 	const img = el.querySelector<HTMLImageElement>('img:not(.note-export-mermaid-img)');
 	if (img && el.childNodes.length === 1) {
-		const imgPara = makeImageParagraph(img, settings, mermaidImages);
+		const imgPara = makeImageParagraph(img, settings);
 		if (imgPara) return imgPara;
 	}
 
@@ -303,7 +317,6 @@ function makeParagraph(el: HTMLElement, settings: NoteExportSettings, mermaidIma
 function makeList(
 	el: HTMLElement,
 	settings: NoteExportSettings,
-	mermaidImages: MermaidImage[],
 	type: 'bullets' | 'numbered',
 	level: number
 ): Paragraph[] {
@@ -347,14 +360,14 @@ function makeList(
 		// Recurse into nested lists
 		for (const nested of nestedLists) {
 			const nestedType = nested.tagName.toLowerCase() === 'ol' ? 'numbered' : 'bullets';
-			items.push(...makeList(nested, settings, mermaidImages, nestedType, level + 1));
+			items.push(...makeList(nested, settings, nestedType, level + 1));
 		}
 	}
 
 	return items;
 }
 
-function makeTable(el: HTMLElement, settings: NoteExportSettings, mermaidImages: MermaidImage[]): Table {
+function makeTable(el: HTMLElement, settings: NoteExportSettings): Table {
 	const rows: TableRow[] = [];
 	const tableRows = el.querySelectorAll('tr');
 
@@ -387,8 +400,8 @@ function makeTable(el: HTMLElement, settings: NoteExportSettings, mermaidImages:
 	});
 }
 
-function makeBlockquote(el: HTMLElement, settings: NoteExportSettings, mermaidImages: MermaidImage[]): Paragraph[] {
-	const children = walkChildren(el, settings, mermaidImages, 0);
+function makeBlockquote(el: HTMLElement, settings: NoteExportSettings): Paragraph[] {
+	const children = walkChildren(el, settings, 0);
 	// Apply left border + indent to all paragraphs inside blockquote
 	return children.map(child => {
 		if (child instanceof Paragraph) {
@@ -440,33 +453,64 @@ function makeHorizontalRule(): Paragraph {
 function makeImageParagraph(
 	img: HTMLImageElement,
 	settings: NoteExportSettings,
-	mermaidImages: MermaidImage[]
 ): Paragraph | null {
-	// Check if this is a Mermaid image
-	const mermaidIdx = img.getAttribute('data-mermaid-index');
-	if (mermaidIdx !== null) {
-		const idx = parseInt(mermaidIdx, 10);
-		const mimg = mermaidImages[idx];
-		if (mimg) {
+	// Mermaid images: written by replaceMermaidBlocks as data: URLs with pixel dims in dataset
+	if (img.classList.contains('note-export-mermaid-img')) {
+		try {
+			const base64 = img.src.split(',')[1];
+			const buffer = Buffer.from(base64, 'base64');
+			const widthPx  = parseInt(img.dataset.mermaidWidthPx  ?? '400', 10);
+			const heightPx = parseInt(img.dataset.mermaidHeightPx ?? '200', 10);
 			return new Paragraph({
 				children: [
 					new ImageRun({
-						data: mimg.png,
-						transformation: {
-							width: mimg.widthMm * MM_TO_EMU / 914.4,  // EMU → points for transformation
-							height: mimg.heightMm * MM_TO_EMU / 914.4,
-						},
+						data: buffer,
+						transformation: { width: widthPx, height: heightPx },
 						type: 'png',
 					}),
 				],
 				alignment: AlignmentType.CENTER,
 			});
+		} catch (err) {
+			console.error('[note-export] Failed to embed Mermaid image in DOCX:', err);
+			return null;
 		}
 	}
 
-	// Regular image — try to load from src
-	// For now, skip images that can't be loaded synchronously
-	// In a future version, could pre-fetch all images
+	// Regular vault images via app:// or data: URLs
+	const src = img.getAttribute('src') ?? '';
+	if (src.startsWith('data:image/')) {
+		try {
+			const base64 = src.split(',')[1];
+			const buffer = Buffer.from(base64, 'base64');
+			const w = img.naturalWidth  || img.width  || 400;
+			const h = img.naturalHeight || img.height || 200;
+			const ext = src.startsWith('data:image/png') ? 'png' : 'jpg';
+			return new Paragraph({
+				children: [new ImageRun({ data: buffer, transformation: { width: w, height: h }, type: ext as 'png' | 'jpg' })],
+				alignment: AlignmentType.CENTER,
+			});
+		} catch { return null; }
+	}
+
+	// app:// local vault images
+	const appMatch = src.match(/app:\/\/(?:local\/)?(.+?)(?:\?.*)?$/);
+	if (appMatch) {
+		try {
+			let filePath = decodeURIComponent(appMatch[1]);
+			// Windows: strip leading slash before drive letter (e.g. /C:/... → C:/...)
+			if (/^\/[A-Za-z]:/.test(filePath)) filePath = filePath.slice(1);
+			const buffer = require('fs').readFileSync(filePath) as Buffer;
+			const ext = filePath.match(/\.(png|gif|bmp)$/i) ? 'png' : 'jpg';
+			const w = img.naturalWidth  || img.width  || 400;
+			const h = img.naturalHeight || img.height || 200;
+			return new Paragraph({
+				children: [new ImageRun({ data: buffer, transformation: { width: w, height: h }, type: ext as 'png' | 'jpg' })],
+				alignment: AlignmentType.CENTER,
+			});
+		} catch { return null; }
+	}
+
 	return null;
 }
 
