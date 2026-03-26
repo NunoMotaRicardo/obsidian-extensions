@@ -1,9 +1,0 @@
-{
-  "id": "note-export",
-  "name": "Note Export",
-  "version": "1.0.2",
-  "minAppVersion": "1.0.0",
-  "description": "Export notes to PDF or Word (.docx) with full Mermaid diagram support.",
-  "author": "nunor",
-  "isDesktopOnly": true
-}
