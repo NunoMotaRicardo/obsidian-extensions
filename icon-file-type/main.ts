@@ -4,6 +4,7 @@ import wordIcon from './icons/word.png';
 import excelIcon from './icons/excel.png';
 import powerpointIcon from './icons/powerpoint.png';
 import pngIcon from './icons/png.png';
+import obsidianColorIcon from './icons/obisian-color.png';
 
 const ICON_CLASS = 'ift-icon';
 const ICON_EXT_ATTR = 'data-ift-ext';
@@ -29,6 +30,10 @@ function badge(color: string, label: string): string {
 }
 
 const FILE_ICONS: Readonly<Record<string, string>> = {
+  // ── Obsidian ──────────────────────────────────────────────────────────────
+  md:     img(obsidianColorIcon, 'Markdown'),
+  canvas: img(obsidianColorIcon, 'Canvas'),
+
   // ── Office / Documents ────────────────────────────────────────────────────
   pdf:  img(pdfIcon, 'PDF'),
   doc:  img(wordIcon, 'Word'),
